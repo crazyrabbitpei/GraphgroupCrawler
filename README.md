@@ -26,10 +26,12 @@
 ##以及到control資料夾下修改*list* file
 
 - list格式
+```json
 {
->        "item":"item1,item2....,itemN",    //每筆想追蹤的物品、留言 都用逗號做為分隔
->        "type":"none", //保留欄位
->        "not":"none",  //保留欄位
->        "match":0, //保留欄位
->        "comment_track":"comment1,comment2...commentN" //每筆想追蹤的物品、留言 都用逗號做為分隔
+    "item":"item1,item2....,itemN",    //每筆想追蹤的物品、留言 都用逗號做為分隔
+    "type":"none", //保留欄位
+    "not":"none",  //保留欄位
+    "match":0, //保留欄位
+    "comment_track":"comment1,comment2...commentN" //每筆想追蹤的物品、留言 都用逗號做為分隔
 }
+```
