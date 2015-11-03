@@ -31,7 +31,7 @@
 >        "type":"none",
 >        "not":"none",
 >        "match":0,
->        comment_track":"comment1,comment2...commentN"
+>        "comment_track":"comment1,comment2...commentN"
 }
 
 每筆想追蹤的物品、留言 都用逗號做為分隔，type,not match目前皆為保留欄位，此版本尚未用到，
