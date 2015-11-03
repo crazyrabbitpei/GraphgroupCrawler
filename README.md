@@ -12,7 +12,7 @@
     "version":"v2.5",   //graph api version
     "dir":"./fb_data",  //追蹤id詳細資料的預設存放路徑，包含已爬過的清單、error log、next page紀錄
     "depth":2,  //每次請求會回傳limit個結果，若需繼續往下找，可在這邊設定next page 深度
-    "readInterval":""   //多久發一次graph api去抓頁面 Crontab格式 秒 分 時 日 月 星期
+    "readInterval":"* * * * * *"   //多久發一次graph api去抓頁面 Crontab格式 秒 分 時 日 月 星期
 }
 ```
 - shadowap格式
