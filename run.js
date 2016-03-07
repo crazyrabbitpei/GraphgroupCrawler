@@ -45,7 +45,7 @@ try {
     //console.log("id:"+appid+" yoyo:"+yoyo);
     //console.log("https://graph.facebook.com/oauth/access_token?client_id="+appid+"&client_secret="+yoyo+"&grant_type=client_credentials");
 
-    fs.exists(dir+"/"+groupid,function(exists){
+    fs.exists(dir+"/"+groupid+"/crawled",function(exists){
         if(!exists){
             fs.mkdir(dir,function(){
                 console.log("Create "+dir);
@@ -99,7 +99,9 @@ function get_accessToken(fin){
 function setBot(token,tomail,frommail,readInter,mailNoticeT){
     new CronJob(readInter, function() {//http://sweet.io/p/ncb000gt/node-cron
         try{
-            fbBot.crawlerFB(token);
+            fbBot.crawlerFB(token,function(result){
+                console.log(result);
+            });
         }
         catch(e){
             console.log(e);

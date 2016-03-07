@@ -78,6 +78,9 @@ function findBoardGame(body,callback){
             callback(2,game_matchnums,0,matchlist);
             //console.log("["+i+"]games:"+games[i]);
         }
+        else{
+            callback(0,game_matchnums,0,matchlist);
+        }
         /*
         else if(match<=game_matchnums){//match at least [match] 
             callback(1,game_matchnums,0,matchlist);
