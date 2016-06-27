@@ -20,6 +20,12 @@ exports.Bot_runStatus=Bot_runStatus;
 try {
     service1 = JSON.parse(fs.readFileSync('./service/shadow'));
     var groupid = service1['id'];
+    var again_time = service1['again_time'];
+    var write2fileInterval = service1['write2fileInterval'];
+    var id_manage_dir = service1['id_manage_dir'];
+    var crawled_file = service1['crawled_file'];
+    var comments_file = service1['comments_file'];
+    var group_lasttime_file = service1['group_lasttime_file'];
     var version = service1['version'];
     var limit = service1['limit'];
     var dir = service1['dir'];
@@ -34,6 +40,8 @@ try {
     var mailNoticeTime = service2['mailNoticeTime'];
 
     exports.groupid=groupid;
+    exports.again_time=again_time;
+    exports.write2fileInterval=write2fileInterval;
     exports.version=version;
     exports.limit=limit;
     exports.dir=dir;
@@ -42,24 +50,11 @@ try {
     exports.yoyo=yoyo;
     exports.tomail=tomail;
     exports.frommail=frommail;
-    //console.log("id:"+appid+" yoyo:"+yoyo);
-    //console.log("https://graph.facebook.com/oauth/access_token?client_id="+appid+"&client_secret="+yoyo+"&grant_type=client_credentials");
+    
+    initFile(dir,groupid,crawled_file);
+    initFile(dir,groupid,comments_file);
+    initFile(id_manage_dir,'',group_lasttime_file);
 
-    fs.exists(dir+"/"+groupid+"/crawled",function(exists){
-        if(!exists){
-            fs.mkdir(dir,function(){
-                console.log("Create "+dir);
-                fs.mkdir(dir+"/"+groupid,function(){
-                    console.log("Create "+dir+"/"+groupid);
-                    fs.writeFile(dir+"/"+groupid+"/crawled","0",function(){
-                    });
-
-                });
-
-            });
-
-        }
-    });
 }
 catch (err) {
     console.error(err);
@@ -76,7 +71,40 @@ finally{
         }
     });
 }
+function initFile(fdir,fgroupid,filename){
+    if(fgroupid==''){
+        console.log(fdir+"/"+filename);
+        fs.exists(fdir+"/"+filename,function(exists){
+            if(!exists){
+                fs.mkdir(fdir,function(){
+                    console.log("Create "+fdir);
+                    fs.writeFile(fdir+"/"+filename,'',function(){
+                    });
+                });
+            }
+        });
 
+    }
+    else{
+        console.log(fdir+"/"+fgroupid+"/"+filename);
+        fs.exists(fdir+"/"+fgroupid+"/"+filename,function(exists){
+            if(!exists){
+                fs.mkdir(fdir,function(){
+                    console.log("Create "+fdir);
+                    fs.mkdir(fdir+"/"+fgroupid,function(){
+                        console.log("Create "+fdir+"/"+fgroupid);
+                        fs.writeFile(fdir+"/"+fgroupid+"/"+filename,'',function(){
+                        });
+
+                    });
+
+                });
+            }
+        });
+
+    }
+
+}
 function get_accessToken(fin){
     //get access token
     request({
@@ -100,7 +128,6 @@ function setBot(token,tomail,frommail,readInter,mailNoticeT){
     new CronJob(readInter, function() {//http://sweet.io/p/ncb000gt/node-cron
         try{
             fbBot.crawlerFB(token,function(result){
-                console.log(result);
             });
         }
         catch(e){

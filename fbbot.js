@@ -10,8 +10,27 @@ var dateFormat = require('dateformat');
 var now = new Date();
 var matchGame = require('./tool/notice');
 var myModule = require('./run');
+var HashMap = require('hashmap');
+var LineByLineReader = require('line-by-line');
+var CronJob = require('cron').CronJob;
+var group_id = new HashMap();
+var crawled_map = new HashMap();
+var comments_map = new HashMap();
 
 var count=0;
+
+var service1 = JSON.parse(fs.readFileSync('./service/shadow'));
+var write2fileInterval = service1['write2fileInterval'];
+var id_manage_dir = service1['id_manage_dir'];
+var crawled_file = service1['crawled_file'];
+var comments_file = service1['comments_file'];
+var group_lasttime_file = service1['group_lasttime_file'];
+
+var job = new CronJob(write2fileInterval, function() {
+        console.log('write2file...');
+        write2file();
+}, null, false, 'Asia/Taipei');
+job.start();
 
 function crawlerFB(token,fin){
     var groupid = myModule.groupid;
@@ -21,50 +40,71 @@ function crawlerFB(token,fin){
     var depth = myModule.depth;
     var appid = myModule.appid;
     var yoyo = myModule.yoyo;
-    //console.log("url:"+"https://graph.facebook.com/"+version+"/"+groupid+"/feed?access_token="+token+"&limit="+limit);
-    request({
-        uri: "https://graph.facebook.com/"+version+"/"+groupid+"/feed?access_token="+token+"&limit="+limit,
-    },function(error, response, body){
-        //console.log("error:"+error);
-        try{
-            feeds = JSON.parse(body);
-        }
-        catch(e){
-            console.log("crawlerFB:"+e);
-            fs.appendFile(dir+"/"+groupid+"/err_log","error:"+e+"\ncrawlerFB:"+body+"\n",function(){});
-            fin("err_log");
-            return;
-        }
-        finally{
-            if(feeds['error']){
-                fs.appendFile(dir+"/"+groupid+"/err_log","crawlerFB:"+body+"\n",function(){});
-                console.log("error");
+    if(group_id.count()<=0){
+        readGroup_id(function(){
+            readCrawled_map(function(){
+                readComments_map(function(){
+                    var lasttime = group_id.get(groupid);
+                    if(typeof lasttime==='undefined'){
+                        console.log('['+groupid+'] first crawle');
+                    }
+                    else{
+                        console.log('['+groupid+']  last time:'+lasttime);
+                    }
+                    crawlerFB(token,fin);
+                });
+            });
+        });
+    }
+    else{
+
+        //console.log("url:"+"https://graph.facebook.com/"+version+"/"+groupid+"/feed?access_token="+token+"&limit="+limit);
+        request({
+            uri: "https://graph.facebook.com/"+version+"/"+groupid+"/feed?access_token="+token+"&limit="+limit,
+        },function(error, response, body){
+            //console.log("error:"+error);
+            try{
+                var feeds = JSON.parse(body);
+            }
+            catch(e){
+                console.log("crawlerFB:"+e);
+                fs.appendFile(dir+"/"+groupid+"/err_log","error:"+e+"\ncrawlerFB:"+body+"\n",function(){});
+                fin("err_log");
                 return;
             }
-            //console.log(feeds['paging'].next);
-            fs.writeFile(dir+"/"+groupid+"/nextpage",feeds['paging'].next,function(){
-            });
-            //getFeedsContent(feeds,token);
-            isCrawled(feeds,token,function(result){
-                if(result!=-1){
-                    try{
-                        nextPage(feeds['paging'].next,depth-1,token);
-                    }
-                    catch(e){
-                        console.log("crawlerFB:"+e);
-                    }
+            finally{
+                if(feeds['error']){
+                    fs.appendFile(dir+"/"+groupid+"/err_log","crawlerFB:"+body+"\n",function(){});
+                    console.log("error");
+                    return;
                 }
-                else{
-                    //return;
-                }
-            });
-        }
-    });
+                //console.log(feeds['paging'].next);
+                fs.writeFile(dir+"/"+groupid+"/nextpage",feeds['paging'].next,function(){
+                });
+                //getFeedsContent(feeds,token);
+                isCrawled(feeds,token,function(result){
+                    if(result!=-1){
+                        try{
+                            nextPage(feeds['paging'].next,depth-1,token,fin);
+                        }
+                        catch(e){
+                            console.log("crawlerFB:"+e);
+                        }
+                    }
+                    else{
+                        fin('end');
+                        //return;
+                    }
+                });
+            }
+        });
+    }
+
 }
 
 exports.crawlerFB = crawlerFB;
 
-function nextPage(npage,depth_link,token){
+function nextPage(npage,depth_link,token,fin){
     var groupid = myModule.groupid;
     var version = myModule.version;
     var limit = myModule.limit;
@@ -75,45 +115,64 @@ function nextPage(npage,depth_link,token){
     request({
         uri:npage,
     },function(error, response, body){
-        console.log("error:"+error);
-        try{
-            feeds = JSON.parse(body);
-        }
-        catch(e){
-            console.log("nextPage:"+e);
-            fs.appendFile(dir+"/"+groupid+"/err_log","error:"+e+"\nnextPage:"+body+"\n",function(){});
-            return;
-        }
-        finally{
-            if(feeds['error']){
-                fs.appendFile(dir+"/"+groupid+"/err_log","nextPage:"+body+"\n",function(){});
-                console.log("error");
+        if(!error&&response.statusCode==200){
+            try{
+                var feeds = JSON.parse(body);
+            }
+            catch(e){
+                console.log("nextPage:"+e);
+                fs.appendFile(dir+"/"+groupid+"/err_log","error:"+e+"\nnextPage:"+body+"\n",function(){});
                 return;
             }
-            if(feeds['data']){
-                //console.log(feeds['paging'].next);
-                fs.writeFile(dir+"/"+groupid+"/nextpage",feeds['paging'].next,function(){
-                });
-                //getFeedsContent(feeds,token,0);
-                isCrawled(feeds,token,function(result){
-                    if(result!=-1){
-                        if(depth_link-1!=0){
-                            nextPage(feeds['paging'].next,depth_link-1,token);
+            finally{
+                if(feeds['error']){
+                    fs.appendFile(dir+"/"+groupid+"/err_log","nextPage:"+body+"\n",function(){});
+                    console.log("error");
+                    return;
+                }
+                if(feeds['data']){
+                    //console.log(feeds['paging'].next);
+                    fs.writeFile(dir+"/"+groupid+"/nextpage",feeds['paging'].next,function(){
+                    });
+                    //getFeedsContent(feeds,token,0);
+                    isCrawled(feeds,token,function(result){
+                        if(result!=-1){
+                            nextPage(feeds['paging'].next,depth_link-1,token,fin);
                         }
-                    }
-                    else{
-                        //return;
-                    }
-                });
+                        else{
+                            fin('end');
+                        }
+                    });
+                }
+
             }
 
         }
+        else{
+            if(error){
+                console.log("error:"+error);
+                if(error.code.indexOf('TIME')!=-1){
+                    setTimeout(function(){
+                        nextPage(npage,depth_link,token,fin);
+                    },again_time*1000);
+                }
+            }
+            else if(response.statusCode>600&&response.statusCode<=500){
+                setTimeout(function(){
+                    nextPage(npage,depth_link,token,fin);
+                },again_time*1000);
+            }
+            else{
+                fin('error');
+            }
+        }
+
     });
 
 }
 
 function isCrawled(feeds,token,fin){
-    var check=-1;
+    var check=0;
     var full_id,article_id,article_id,article_updated,blink;
     var i;
     var groupid = myModule.groupid;
@@ -123,174 +182,272 @@ function isCrawled(feeds,token,fin){
     var depth = myModule.depth;
     var appid = myModule.appid;
     var yoyo = myModule.yoyo;
-    //read crawled file
-    fs.readFile(dir+"/"+groupid+"/crawled","utf-8",function(err,data){
-        for(i=0;i < feeds['data'].length;i++){
-            full_id = feeds['data'][i].id;
-            article_id = feeds['data'][i].id.split("_");
-            article_id = article_id[1];
-            article_updated = feeds['data'][i].updated_time;
-            //console.log(data);
-            //if exists in crawled 
-            if((data.indexOf(article_id))!=-1){
-                if(data.indexOf(article_id+"@"+article_updated)!=-1){
-                    console.log("post was not updated");
-                    break;
-                    //continue;
-                }
-                //check updated time(article_updated) create time(in crawled file)
-                terms = data.split(",");
-                for(var j=terms.length-1;j>0;j--){
-                    if(terms[j].indexOf(article_id)!=-1){
-                        old_time = terms[j].split("@");
-                        //console.log("[id]:"+article_id+"'s old_time="+old_time[1]+" terms:"+terms[j]);
-                        break;
-                    }
-                }
-
-                //if the same, then skip it, and end the crawler round
-                if(old_time[1]==article_updated){
-                    //console.log("id="+article_id);
-                    //console.log("old time="+old_time[1]+" article_updated="+article_updated);
-                    console.log("[id]:"+article_id+" skip, crawler end.");
-                    check = 0;
-                    fin(-1);
-                    //break;
-                    return;
-                }
-                //if not, check whether the article is updated by the author or not. 
-                else{
-                    console.log("[id]:"+article_id+" was updated:");
-                    //console.log(article_id+"-> old time="+old_time[1]+" article_updated="+article_updated);
-                    //console.log("https://graph.facebook.com/"+version+"/"+full_id+"/?fields=from,comments&access_token="+token);
-                    //fs.appendFile(dir+"/"+groupid+"/crawled",article_id+"@"+article_updated,function(){
-                    //});
-                    request({
-                        uri: "https://graph.facebook.com/"+version+"/"+full_id+"/?fields=message,from,comments,updated_time&access_token="+token,
-                    },function(error, response, body){
-                        console.log("error:"+error);
-                        var index=0,index_author="test";
-                        index -=10;
-                        if(typeof body =="undefined"){
-                            fs.appendFile(dir+"/"+groupid+"/err_log","body undefined\n",function(){});
-                            return;
-                        }
-                        try{
-                            detail  = JSON.parse(body);
-                            if(typeof detail =="undefined"){
-                                fs.appendFile(dir+"/"+groupid+"/err_log","detail undefined:"+body+"\n",function(){});
-                                return;
-                            }
-                        }
-                        catch(e){
-                            console.log("isCrawled:"+e);
-                            fs.appendFile(dir+"/"+groupid+"/err_log","error:"+e+"\nisCrawled:"+body+"\n",function(){});
-                            return;
-
-                        }
-                        finally{
-                            //console.log("detail:"+body);
-                            if(detail['error']){
-                                fs.appendFile(dir+"/"+groupid+"/err_log","isCrawled:"+body+"\n",function(){});
-                                console.log("error");
-                                return;
-                            }
-                            if(detail['comments']){
-                                comments_length = detail['comments'].data.length;
-                                //console.log("[id]:"+detail['id']+" has comments_length="+comments_length);
-                                for(j=comments_length-1;j>=0;j--){
-                                    //the comment which was written by author is the newset comment.
-                                    if(detail['comments'].data[j].from.id==detail['from'].id&&detail['comments'].data[j].created_time==detail['updated_time']){
-                                        index=j;
-                                    }
-                                    //the comment which was written by author is not the newset comment.
-                                    else if(detail['comments'].data[j].from.id==detail['from'].id){
-                                        index_author = index_author+"~"+j;
-                                        //j=-20;
-                                        //break;
-                                    }
-                                }
-                                //console.log("index_author:"+index_author);
-                            }
-
-                            //if yes, grab the aritcle, and the comment which is writen by author.
-                            updated_id = detail['id'].split("_");
-                            if(index!=-10&&data.indexOf(updated_id[1]+"@"+detail['comments'].data[index].created_time)==-1){//comment written by author is the newest
-                                console.log("comment written by author is the newest");
-                                console.log(updated_id[1]+"@"+detail['comments'].data[index].created_time);
-                                //console.log("[id]:"+updated_id[1]+" was updated to cralwed file, time="+detail['comments'].data[index].created_time+" message:"+detail['message']);
-                                //
-                                blink="https://www.facebook.com/groups/"+groupid+"/permalink/"+updated_id[1];
-                                matchGame.convert(detail['comments'].data[index].created_time,detail['message'],blink,detail['comments'].data[index].message,"comment");
-                                //write the new message to cralwed file
-                                /*
-                                   fs.appendFile(dir+"/"+groupid+"/body","Updated Time:"+detail['comments'].data[index].created_time+"\nMessage:\n"+detail['message']+"\nComment:\n"+detail['comments'].data[index].message+"\nLink:"+blink+"/\n\n",function(){
-                                   });
-                                   */
-                                fs.appendFileSync(dir+"/"+groupid+"/crawled",","+updated_id[1]+"@"+detail['comments'].data[index].created_time);
-                                //fin(j);
-                            }
-                            if(index_author!="test"){//comment written by author is not the newest
-                                console.log("=>comment written by author is not the newest");
-                                //console.log("->"+index_author);
-                                //fs.readFile(dir+"/"+groupid+"/crawled","utf-8",function(err,data){
-                                index_authors_a = index_author.split("~");
-                                //console.log("index_authors_a.length:"+index_authors_a.length);
-                                //console.log("a_id[1]:"+a_id[1]);
-                                for(k=1;k<index_authors_a.length;k++){
-                                    if(typeof detail['comments'].data[index_authors_a[k]]=="undefined"){
-                                        break;
-                                    }
-                                    //console.log("=>"+index_authors_a[k]);
-                                    //console.log(":"+detail['comments'].data[index_authors_a[k]].message);
-                                    //console.log(":"+detail['comments'].data[index_authors_a[k]].created_time);
-
-                                    if(data.indexOf(updated_id[1]+"@"+detail['comments'].data[index_authors_a[k]].created_time)==-1){
-                                        //console.log("new cra data:"+a_id[1]+"@"+detail['comments'].data[index_authors_a[k]].created_time);
-                                        blink="https://www.facebook.com/groups/"+groupid+"/permalink/"+updated_id[1];
-                                        matchGame.convert(detail['comments'].data[index_authors_a[k]].created_time,detail['message'],blink,detail['comments'].data[index_authors_a[k]].message,"comment");
-                                        /*
-                                           fs.appendFile(dir+"/"+groupid+"/body","Updated Time:"+detail['comments'].data[index_authors_a[k]].created_time+"\nMessage:\n"+detail['message']+"\nComment:\n"+detail['comments'].data[index_authors_a[k]].message+"\nLink:"+blink+"/\n\n",function(){
-                                           });
-                                           */
-                                        fs.appendFileSync(dir+"/"+groupid+"/crawled",","+updated_id[1]+"@"+detail['comments'].data[index_authors_a[k]].created_time);
-
-                                    }
-                                    else{
-                                        console.log(updated_id[1]+"@"+detail['comments'].data[index_authors_a[k]].created_time+" has crawled");
-                                        break;
-                                    }
-
-                                }
-                                fs.appendFileSync(dir+"/"+groupid+"/crawled",","+updated_id[1]+"@"+detail['updated_time']);
-                                //});
-                            }
-                            //if not, skip it, and coutinue looking for the rest. 
-                            if(index_author=="test" && index==-10){
-                                console.log("[id]:"+detail['id']+" was not updated by author skip it");
-                                fs.appendFileSync(dir+"/"+groupid+"/crawled",","+updated_id[1]+"@"+detail['updated_time']);
-                                //fin(1);   
-                            }
-
-                        }
-                    });
-                }
-            }
-            else{
-                console.log("new");
-                blink="https://www.facebook.com/groups/"+groupid+"/permalink/"+article_id;
-                matchGame.convert(article_updated,feeds['data'][i].message,blink,"","ori");
-                /*
-                   fs.appendFile(dir+"/"+groupid+"/body","Updated Time:"+article_updated+"\nMessage:\n"+feeds['data'][i].message+"\nLink:"+blink+"/\n\n",function(){
-                   });
-                   */
-                fs.appendFileSync(dir+"/"+groupid+"/crawled",","+article_id+"@"+article_updated);
-                //fin(1);
-            }
-            if(check==0){
+    for(i=0;i < feeds['data'].length;i++){
+        full_id = feeds['data'][i].id;
+        article_id = feeds['data'][i].id.split("_");
+        article_id = article_id[1];
+        article_updated = feeds['data'][i].updated_time;
+        if(group_id.has(groupid)){
+            var last_time = group_id.get(groupid);
+            if(new Date(last_time).getTime()>=new Date(article_updated).getTime()){
+                console.log("==end==");
+                check=-1;
                 break;
             }
-        }//for loop end
+        }
+        if(crawled_map.has(article_id)&&check!=-1){
+            var last_time = crawled_map.get(article_id);
+            if(new Date(last_time).getTime()<new Date(article_updated).getTime()){
+                crawled_map.set(article_id,article_updated);
+                console.log("["+article_id+"] was updated:");
+                fetchComment(full_id,article_updated,token);
+            }
+            else{
+                if(new Date(last_time).getTime()<new Date(article_updated).getTime()){
+                    console.log("["+article_id+"] post was not updated");
+                }
+            }
+        }
+        else{
+            crawled_map.set(article_id,article_updated);
+            console.log("new posts");
+            blink="https://www.facebook.com/groups/"+groupid+"/permalink/"+article_id;
+            matchGame.convert(article_updated,feeds['data'][i].message,blink,"","ori");
+        }
+    }//for loop end
+    group_id.set(groupid,feeds['data'][0].updated_time);
+    fin(check);
+}
+function fetchComment(full_id,article_updated,token){
+    var groupid = myModule.groupid;
+    var again_time = myModule.again_time;
+    var version = myModule.version;
+    var limit = myModule.limit;
+    var dir = myModule.dir;
+    var depth = myModule.depth;
+    var appid = myModule.appid;
+    var yoyo = myModule.yoyo;
+    request({
+        uri: "https://graph.facebook.com/"+version+"/"+full_id+"/?fields=message,from,comments,updated_time,id&access_token="+token,
+    },function(error, response, body){
+        if(!error&&response.statusCode==200){
+            if(typeof body ==="undefined"){
+                fs.appendFile(dir+"/"+groupid+"/err_log","body undefined\n",function(){});
+                setTimeout(function(){
+                    fetchComment(full_id,article_updated,token);
+                },again_time*1000);
+            }
+            else{
+                var err_flag=0;
+                try{
+                    var detail = JSON.parse(body);
+                    if(typeof detail ==="undefined"){
+                        fs.appendFile(dir+"/"+groupid+"/err_log","detail undefined:"+body+"\n",function(){});
+                        setTimeout(function(){
+                            fetchComment(full_id,article_updated,token);
+                        },again_time*1000);
+                        err_flag=1;
+                        return;
+
+                    }
+                }
+                catch(e){
+                    console.log("isCrawled:"+e);
+                    err_flag=1;
+                    fs.appendFile(dir+"/"+groupid+"/err_log","error:"+e+"\nisCrawled:"+body+"\n",function(){});
+                }
+                finally{
+                    if(err_flag==1){
+                        return;
+                    }
+                    else{
+                        if(detail['error']){
+                            fs.appendFile(dir+"/"+groupid+"/err_log","isCrawled:"+body+"\n",function(){});
+                            console.log("error");
+                            return;
+                        }
+
+                        if(detail['comments']){
+                            var j,comments_length,index;
+                            var comment_id,updated_id;
+                            var has_author_comment=0;
+                            comments_length = detail['comments'].data.length;
+                            for(j=comments_length-1;j>=0;j--){
+                                comment_id = detail['comments'].data[j].id;
+                                //the new comment which was written by author is the newset comment.
+                                if(!comments_map.has(comment_id)&&detail['comments'].data[j].from.id==detail['from'].id&&detail['comments'].data[j].created_time==detail['updated_time']){
+                                    comments_map.set(comment_id,1);
+                                    has_author_comment=1;
+                                    updated_id = detail['id'].split("_");
+                                    blink="https://www.facebook.com/groups/"+groupid+"/permalink/"+updated_id[1];
+                                    matchGame.convert(detail['comments'].data[j].created_time,detail['message'],blink,detail['comments'].data[j].message,"comment");
+                                }
+                                //the new comment which was written by author is not the newset comment.
+                                else if(!comments_map.has(comment_id)&&detail['comments'].data[j].from.id==detail['from'].id){
+                                    comments_map.set(comment_id,1);
+                                    has_author_comment=2;
+                                    updated_id = detail['id'].split("_");
+                                    blink="https://www.facebook.com/groups/"+groupid+"/permalink/"+updated_id[1];
+                                    matchGame.convert(detail['comments'].data[j].created_time,detail['message'],blink,detail['comments'].data[j].message,"comment");
+                                    break;//only read one comment that is post by author last time
+                                }
+                                else if(comments_map.has(comment_id)){
+                                    break;//no new commwnts
+                                }
+                            }
+                            if(has_author_comment==0){
+                                console.log("["+detail['id']+"] was not updated by author skip it");
+                            }
+                            else if(has_author_comment==1){
+                                console.log("["+detail['id']+"] comment written by author is the newest");
+                            }
+                            else if(has_author_comment==2){
+                                console.log("["+detail['id']+"] comment written by author is not the newest");
+                            }
+                        }
+                        else{
+                            console.log('['+detail['id']+'] no comments');
+                        }
+                    }
+                }
+            }
+        }
+        else{
+            if(error){
+                console.log("error:"+error);
+                if(error.code.indexOf('TIME')!=-1){
+                    setTimeout(function(){
+                        fetchComment(full_id,article_updated,token);
+                    },again_time*1000);
+                }
+                else{
+                    fs.appendFile(dir+"/"+groupid+"/err_log",error+"\n",function(){});
+                }
+            }
+            else if(response.statusCode<600&&response.statusCode>=500){
+                setTimeout(function(){
+                    fetchComment(full_id,article_updated,token);
+                },again_time*1000);
+            }
+        }
+    });
+}
+
+function write2file(){
+    var groupid = myModule.groupid;
+    var dir = myModule.dir;
+    var i;
+    var keys,values,result='';
+
+    keys = group_id.keys();
+    values = group_id.values();
+    for(i=0;i<keys.length;i++){
+        if(result==''){
+            result=keys[i]+','+values[i];
+        }
+        else{
+            result+='\n'+keys[i]+','+values[i];
+        }
+    }
+    if(result!=''){
+        fs.writeFile(id_manage_dir+"/"+group_lasttime_file,result+'\n',function(err){
+            if(err){console.log(err)};
+            console.log('[group_lasttime_file] done');
+        });
+
+    }
+
+
+    result='';
+    keys = crawled_map.keys();
+    values = crawled_map.values();
+    for(i=0;i<keys.length;i++){
+        if(result==''){
+            result=keys[i]+','+values[i];
+        }
+        else{
+            result+='\n'+keys[i]+','+values[i];
+        }
+    }
+    if(result!=''){
+        fs.writeFile(dir+"/"+groupid+"/"+crawled_file,result+'\n',function(err){
+            if(err){console.log(err)};
+            console.log('[crawled_file] done');
+        });
+    }
+
+    result='';
+    keys = comments_map.keys();
+    values = comments_map.values();
+    for(i=0;i<keys.length;i++){
+        if(result==''){
+            result=keys[i]+','+values[i];
+        }
+        else{
+            result+='\n'+keys[i]+','+values[i];
+        }
+
+    }
+    if(result!=''){
+        fs.writeFile(dir+"/"+groupid+"/"+comments_file,result+'\n',function(err){
+            if(err){console.log(err)};
+            console.log('[comments_file] done');
+        });
+
+    }
+}
+
+function readGroup_id(fin){
+    var groupid = myModule.groupid;
+    var dir = myModule.dir;
+    var lr = new LineByLineReader(id_manage_dir+'/'+group_lasttime_file);
+    lr.on('error', function (err) {
+        console.log('[readGroup_id] '+err);
+    });
+
+    lr.on('line', function (line) {
+        var parts = line.split(',');
+        group_id.set(parts[0],parts[1]);
+    });
+
+    lr.on('end', function () {
+        fin('');
+    });
+
+}
+function readCrawled_map(fin){
+    var groupid = myModule.groupid;
+    var dir = myModule.dir;
+    var lr = new LineByLineReader(dir+'/'+groupid+'/'+crawled_file);
+    lr.on('error', function (err) {
+        console.log('[readCrawled_map] '+err);
+    });
+
+    lr.on('line', function (line) {
+        var parts = line.split(',');
+        crawled_map.set(parts[0],parts[1]);
+    });
+
+    lr.on('end', function () {
+        fin('');
+    });
+}
+function readComments_map(fin){
+    var groupid = myModule.groupid;
+    var dir = myModule.dir;
+    var lr = new LineByLineReader(dir+'/'+groupid+'/'+comments_file);
+
+    lr.on('error', function (err) {
+        console.log('[readComments_map] '+err);
+    });
+
+    lr.on('line', function (line) {
+        var parts = line.split(',');
+        comments_map.set(parts[0],parts[1]);
+    });
+
+    lr.on('end', function () {
+        fin('');
     });
 
 }
