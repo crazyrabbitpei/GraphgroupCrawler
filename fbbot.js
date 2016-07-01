@@ -1,11 +1,7 @@
 var request = require('request');
 var http = require('http');
 var fs = require('fs');
-var iconv = require('iconv-lite');
-var cheerio = require("cheerio");
 var S = require('string');
-var he = require('he');
-var punycode = require('punycode');
 var dateFormat = require('dateformat');
 var now = new Date();
 var matchGame = require('./tool/notice');
@@ -62,41 +58,68 @@ function crawlerFB(token,fin){
         request({
             uri: "https://graph.facebook.com/"+version+"/"+groupid+"/feed?access_token="+token+"&limit="+limit,
         },function(error, response, body){
-            //console.log("error:"+error);
-            try{
-                var feeds = JSON.parse(body);
-            }
-            catch(e){
-                console.log("crawlerFB:"+e);
-                fs.appendFile(dir+"/"+groupid+"/err_log","error:"+e+"\ncrawlerFB:"+body+"\n",function(){});
-                fin("err_log");
-                return;
-            }
-            finally{
-                if(feeds['error']){
-                    fs.appendFile(dir+"/"+groupid+"/err_log","crawlerFB:"+body+"\n",function(){});
-                    console.log("error");
-                    return;
-                }
-                //console.log(feeds['paging'].next);
-                fs.writeFile(dir+"/"+groupid+"/nextpage",feeds['paging'].next,function(){
-                });
-                //getFeedsContent(feeds,token);
-                isCrawled(feeds,token,function(result){
-                    if(result!=-1){
-                        try{
-                            nextPage(feeds['paging'].next,depth-1,token,fin);
-                        }
-                        catch(e){
-                            console.log("crawlerFB:"+e);
-                        }
-                    }
-                    else{
-                        fin('end');
-                        //return;
-                    }
-                });
-            }
+	    //console.log("error:"+error);
+	    if(!error&&response.statusCode==200){
+
+		var err_flag=0;
+		try{
+		    var feeds = JSON.parse(body);
+		}
+		catch(e){
+		    console.log("[crawlerFB] error:"+e);
+		    fs.appendFile(dir+"/"+groupid+"/err_log","error:"+e+"\ncrawlerFB:"+body+"\n",function(){});
+		    err_flag=1;
+		}
+		finally{
+		    if(err_flag==1){
+			fin("err");
+		    }
+		    else{
+			if(feeds['error']){
+			    fs.appendFile(dir+"/"+groupid+"/err_log","crawlerFB:"+body+"\n",function(){});
+			    console.log("[crawlerFB] error:"+feeds['error']);
+			    fin("err");
+			    return;
+			}
+			fs.writeFile(dir+"/"+groupid+"/nextpage",feeds['paging'].next,function(){
+			});
+			isCrawled(feeds,token,function(result){
+			    if(result!=-1){
+				try{
+				    nextPage(feeds['paging'].next,depth-1,token,fin);
+				}
+				catch(e){
+				    console.log("crawlerFB:"+e);
+				    fin('err');
+				}
+			    }
+			    else{
+				fin('end');
+			    }
+			});
+		    }
+
+		}
+	    }
+	    else{
+		if(error){
+		    console.log("error:"+error);
+		    if(error.code.indexOf('TIME')!=-1){
+			setTimeout(function(){
+			    crawlerFB(token,fin);
+			},again_time*1000);
+		    }
+		}
+		else if(response.statusCode>600&&response.statusCode<=500){
+		    setTimeout(function(){
+			crawlerFB(token,fin);
+		    },again_time*1000);
+		}
+		else{
+		    fin('error');
+		}
+	    }
+
         });
     }
 
@@ -115,26 +138,31 @@ function nextPage(npage,depth_link,token,fin){
     request({
         uri:npage,
     },function(error, response, body){
-        if(!error&&response.statusCode==200){
+	if(!error&&response.statusCode==200){
+	    var err_flag=0;
             try{
                 var feeds = JSON.parse(body);
             }
             catch(e){
                 console.log("nextPage:"+e);
-                fs.appendFile(dir+"/"+groupid+"/err_log","error:"+e+"\nnextPage:"+body+"\n",function(){});
-                return;
+		fs.appendFile(dir+"/"+groupid+"/err_log","error:"+e+"\nnextPage:"+body+"\n",function(){});
+		err_flag=1;
             }
-            finally{
+	    finally{
+		if(err_flag==1){
+		    fin('err');
+		    return;
+		}
+
                 if(feeds['error']){
                     fs.appendFile(dir+"/"+groupid+"/err_log","nextPage:"+body+"\n",function(){});
-                    console.log("error");
+		    console.log("[nextPage] error:"+feeds['error']);
+		    fin('err');
                     return;
                 }
                 if(feeds['data']){
-                    //console.log(feeds['paging'].next);
                     fs.writeFile(dir+"/"+groupid+"/nextpage",feeds['paging'].next,function(){
                     });
-                    //getFeedsContent(feeds,token,0);
                     isCrawled(feeds,token,function(result){
                         if(result!=-1){
                             nextPage(feeds['paging'].next,depth_link-1,token,fin);
@@ -190,7 +218,7 @@ function isCrawled(feeds,token,fin){
         if(group_id.has(groupid)){
             var last_time = group_id.get(groupid);
             if(new Date(last_time).getTime()>=new Date(article_updated).getTime()){
-                console.log("==end==");
+                //console.log("==end==");
                 check=-1;
                 break;
             }
@@ -252,7 +280,7 @@ function fetchComment(full_id,article_updated,token){
                     }
                 }
                 catch(e){
-                    console.log("isCrawled:"+e);
+                    console.log("[fetchComment] error:"+e);
                     err_flag=1;
                     fs.appendFile(dir+"/"+groupid+"/err_log","error:"+e+"\nisCrawled:"+body+"\n",function(){});
                 }
@@ -263,7 +291,7 @@ function fetchComment(full_id,article_updated,token){
                     else{
                         if(detail['error']){
                             fs.appendFile(dir+"/"+groupid+"/err_log","isCrawled:"+body+"\n",function(){});
-                            console.log("error");
+                            console.log("[fetchComment] error seed:"+dir+"/"+groupid+"/err_log");
                             return;
                         }
 
@@ -314,7 +342,7 @@ function fetchComment(full_id,article_updated,token){
         }
         else{
             if(error){
-                console.log("error:"+error);
+                console.log("[fetchComment] error:"+error);
                 if(error.code.indexOf('TIME')!=-1){
                     setTimeout(function(){
                         fetchComment(full_id,article_updated,token);

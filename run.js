@@ -50,10 +50,10 @@ try {
     exports.yoyo=yoyo;
     exports.tomail=tomail;
     exports.frommail=frommail;
-    
-    initFile(dir,groupid,crawled_file);
-    initFile(dir,groupid,comments_file);
-    initFile(id_manage_dir,'',group_lasttime_file);
+
+    initFile(dir,groupid,crawled_file,'');
+    initFile(dir,groupid,comments_file,'');
+    initFile(id_manage_dir,'',group_lasttime_file,groupid);
 
 }
 catch (err) {
@@ -62,90 +62,134 @@ catch (err) {
 }
 finally{
     get_accessToken(function(token){
-        console.log("token:"+token);
-        if(token=="error"){
-            return;
-        }
-        else{
-            setBot(token,tomail,frommail,readInterval,mailNoticeTime);       
-        }
+	console.log("token:"+token);
+	if(token=="error"){
+	    return;
+	}
+	else{
+	    setBot(token,tomail,frommail,readInterval,mailNoticeTime);       
+	}
     });
 }
-function initFile(fdir,fgroupid,filename){
+function initFile(fdir,fgroupid,filename,groupid){
     if(fgroupid==''){
-        console.log(fdir+"/"+filename);
-        fs.exists(fdir+"/"+filename,function(exists){
-            if(!exists){
-                fs.mkdir(fdir,function(){
-                    console.log("Create "+fdir);
-                    fs.writeFile(fdir+"/"+filename,'',function(){
-                    });
-                });
-            }
-        });
+	console.log(fdir+"/"+filename);
+	fs.exists(fdir+"/"+filename,function(exists){
+	    if(!exists){
+		fs.mkdir(fdir,function(){
+		    console.log("Create "+fdir);
+		    var start_date = new Date(); // today!
+		    var before_date = 5; // go back 5 days!
+		    start_date.setDate(start_date.getDate() - before_date);
+		    fs.writeFile(fdir+"/"+filename,groupid+','+start_date,function(){
+			console.log("start_date:"+start_date);
+		    });
+		});
+	    }
+	});
 
     }
     else{
-        console.log(fdir+"/"+fgroupid+"/"+filename);
-        fs.exists(fdir+"/"+fgroupid+"/"+filename,function(exists){
-            if(!exists){
-                fs.mkdir(fdir,function(){
-                    console.log("Create "+fdir);
-                    fs.mkdir(fdir+"/"+fgroupid,function(){
-                        console.log("Create "+fdir+"/"+fgroupid);
-                        fs.writeFile(fdir+"/"+fgroupid+"/"+filename,'',function(){
-                        });
+	console.log(fdir+"/"+fgroupid+"/"+filename);
+	fs.exists(fdir+"/"+fgroupid+"/"+filename,function(exists){
+	    if(!exists){
+		fs.mkdir(fdir,function(){
+		    console.log("Create "+fdir);
+		    fs.mkdir(fdir+"/"+fgroupid,function(){
+			console.log("Create "+fdir+"/"+fgroupid);
+			fs.writeFile(fdir+"/"+fgroupid+"/"+filename,'',function(){
+			});
 
-                    });
+		    });
 
-                });
-            }
-        });
+		});
+	    }
+	});
 
     }
 
 }
-function get_accessToken(fin){
+function get_accessToken(fin)
+{
     //get access token
     request({
-        uri:"https://graph.facebook.com/"+version+"/oauth/access_token?client_id="+appid+"&client_secret="+yoyo+"&grant_type=client_credentials",
-    //uri: "https://graph.facebook.com/"+version+"/"+groupid+"/feed?access_token="+accesst+"&limit="+limit,
+	uri:"https://graph.facebook.com/"+version+"/oauth/access_token?client_id="+appid+"&client_secret="+yoyo+"&grant_type=client_credentials",
+	//uri: "https://graph.facebook.com/"+version+"/"+groupid+"/feed?access_token="+accesst+"&limit="+limit,
     },function(error, response, body){
-        var token = JSON.parse(body);
-        if(token['error']){
-            fs.appendFile(dir+"/"+groupid+"/err_log","get_accessToken:"+body+"\n",function(){});
-            fin("error");
-            return;
-        }
-        else{
-            fin(token['access_token']);
-        }
+	if(!error&&response.statusCode==200){
+	    var err_flag=0;
+	    try{
+		var token = JSON.parse(body);
+	    }
+	    catch(e){
+		err_flag=1;
+	    }
+	    finally{
+		if(err_flag==1){
+		    console.log('[retry get_accessToken] body:'+body);
+		    setTimeout(()=>{
+			get_accessToken(fin);
+		    },again_time*1000);    
+		}
+		else{
+		    if(token['error']){
+			console.log(token['error']);
+			fs.appendFile(dir+"/"+groupid+"/err_log","get_accessToken:"+body+"\n",function(){});
+			fin("error");
+		    }
+		    else{
+			fin(token['access_token']);
+		    }
+		}
+	    }
+	}
+	else{
+	    if(error){
+		console.log("[retry get_accessToken] err:"+error);
+		setTimeout(()=>{
+		    get_accessToken(fin);
+		},again_time*1000);    
+	    }
+	    else{
+		if(response.statusCode>=500&&response.statusCode<600){
+		    console.log('[tetry get_accessToken] response.statusCode:'+response.statusCode);
+		    setTimeout(()=>{
+			get_accessToken(fin);
+		    },again_time*1000);    
+		}
+		else{
+		    console.log("response.statusCod:"+response.statusCod);
+		    fin('error');
+		}
+	    }
+	}
+
     });
 
 }
 
 function setBot(token,tomail,frommail,readInter,mailNoticeT){
     new CronJob(readInter, function() {//http://sweet.io/p/ncb000gt/node-cron
-        try{
-            fbBot.crawlerFB(token,function(result){
-            });
-        }
-        catch(e){
-            console.log(e);
-        }
+	try{
+	    fbBot.crawlerFB(token,function(result){
+	    });
+	}
+	catch(e){
+	    console.log(e);
+	}
     }, null, true, 'Asia/Taipei');
-    
+
     new CronJob(mailNoticeT, function() {
-        transporter.sendMail({
-            from:frommail,
-            to:tomail,
-            subject:'[FB] Bot Running',
-            text:"I'm alive. :)"
-        },function(error,info){
-            if(error){
-                fs.appendFile(dir+"/"+groupid+"/err_log","Can't send mail:"+error+"\n",function(){});
-            }
-        });
+	transporter.sendMail({
+	    from:frommail,
+	    to:tomail,
+	    subject:'[FB] Bot Running',
+	    text:"I'm alive. :)"
+	},function(error,info){
+	    if(error){
+		fs.appendFile(dir+"/"+groupid+"/err_log","Can't send mail:"+error+"\n",function(){});
+	    }
+	});
 
     }, null, true, 'Asia/Taipei');
 
