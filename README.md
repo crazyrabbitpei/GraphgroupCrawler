@@ -7,7 +7,7 @@
 - shadow格式
 ```json
 {
-    	"id":"",
+    "id":"",
 	"limit":20,
 	"version":"v2.5",
 	"dir":"./fb_data",
@@ -26,7 +26,7 @@
 - shadowap格式
 ```json
 {
-    	"id":"App ID",  //須申請開法者專案
+    "id":"App ID",  //須申請開法者專案
 	"yoyo":"App Secret", //須申請開法者專案
 	"tomail":"",    //通知哪個信箱
 	"frommail":"",  //發信者
